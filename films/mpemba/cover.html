@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>抖音封面 · 姆潘巴悬案</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #F4ECDD; }
+  svg { display: block; }
+  .mul { mix-blend-mode: multiply; }
+</style>
+</head>
+<body>
+<svg id="cover" width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <g id="g"></g>
+</svg>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const C = { paper:'#F4ECDD', navy:'#1D2340', pink:'#FF5A87', yellow:'#FFC628', red:'#E8384F' };
+const F = { serif:"'Noto Serif SC'" };
+const g = document.getElementById('g');
+const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const txt = (p, s, a) => { const e = el('text', a, p); e.textContent = s; return e; };
+function measure(str, size, family, weight = 900) {
+  const c = document.createElement('canvas').getContext('2d');
+  c.font = `${weight} ${size}px ${family}`; return c.measureText(str).width;
+}
+// 两行大字：①你信不信？ ②热水比冷水先结冰（关键词红色），垂直分隔确保不重叠
+const A = '你信不信？';
+const B1 = '热水比冷水', B2 = '先结冰';
+const SZ1 = 170, SZ2 = 116;
+const Y1 = 800, Y2 = 1120;
+const wA = measure(A, SZ1, F.serif, 900);
+const wB1 = measure(B1, SZ2, F.serif, 900), wB2 = measure(B2, SZ2, F.serif, 900);
+// 行1（居中，粉色套印阴影）
+{
+  let x = 540 - wA / 2;
+  for (const ch of A) {
+    const w = measure(ch, SZ1, F.serif, 900);
+    txt(g, ch, { x: x + w / 2 + 9, y: Y1 + 9, 'font-size': SZ1, 'font-family': F.serif, 'font-weight': 900, fill: C.pink, 'text-anchor': 'middle', class: 'mul' });
+    txt(g, ch, { x: x + w / 2, y: Y1, 'font-size': SZ1, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+    x += w;
+  }
+}
+// 行2（居中，前五字墨色 + 关键词红色）
+{
+  const x0 = 540 - (wB1 + wB2) / 2;
+  let x = x0;
+  for (const [str, col] of [[B1, C.navy], [B2, C.red]]) {
+    for (const ch of str) {
+      const w = measure(ch, SZ2, F.serif, 900);
+      txt(g, ch, { x: x + w / 2 + 7, y: Y2 + 7, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.yellow, 'text-anchor': 'middle', class: 'mul' });
+      txt(g, ch, { x: x + w / 2, y: Y2, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: col, 'text-anchor': 'middle' });
+      x += w;
+    }
+  }
+}
+</script>
+</body>
+</html>

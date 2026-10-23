@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>姆潘巴悬案</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #F4ECDD; }
+  svg, canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #paper { mix-blend-mode: multiply; pointer-events: none; }
+  #fx { pointer-events: none; }
+  .mul { mix-blend-mode: multiply; }
+</style>
+</head>
+<body>
+<svg id="stage" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="boil" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence id="boilT" type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="1" result="w"/>
+      <feDisplacementMap in="SourceGraphic" in2="w" scale="5" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="4" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -22 15.2" result="gm"/>
+      <feComposite in="d" in2="gm" operator="in"/>
+    </filter>
+    <filter id="stampInk" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="11" result="w"/>
+      <feDisplacementMap in="SourceGraphic" in2="w" scale="7" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="3" seed="21" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -9 5.9" result="gm"/>
+      <feComposite in="d" in2="gm" operator="in"/>
+    </filter>
+    <clipPath id="frameClip"><rect width="1920" height="1080"/></clipPath>
+  </defs>
+  <g clip-path="url(#frameClip)">
+    <g id="cam"><g id="world"></g></g>
+    <g id="hud"></g>
+    <g id="wipe"></g>
+    <rect id="flash" width="1920" height="1080" fill="#FFFFFF" opacity="0"/>
+    <rect id="fade" width="1920" height="1080" fill="#1D2340" opacity="0"/>
+  </g>
+</svg>
+<canvas id="paper" width="1920" height="1080"></canvas>
+<canvas id="fx" width="1920" height="1080"></canvas>
+
+<script>
+// ============================================================
+// 《姆潘巴悬案》 The Mpemba File — halftone dossier
+// 52.8 s @ 30 fps, 100 BPM (1 beat = 0.6 s, 1 bar = 2.4 s)
+// ============================================================
+const NS = 'http://www.w3.org/2000/svg';
+const C = {
+  paper: '#F4ECDD', navy: '#1D2340', blue: '#2E55D6', pink: '#FF5A87', yellow: '#FFC628',
+  cream: '#FFF4E2', red: '#E8384F', night: '#18203F', night2: '#2A3568', skin: '#F7C9A1',
+};
+const F = {
+  serif: "'Noto Serif SC'", cute: "'ZCOOL KuaiLe'", bagel: "'Bagel Fat One'",
+  mono: "'JetBrains Mono', 'Noto Sans SC'", sans: "'Noto Sans SC'",
+};
+const FPS = 30, DUR = 54.4;
+
+function el(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function txt(parent, str, attrs) { const e = el('text', attrs, parent); e.textContent = str; return e; }
+function tf(e, x = 0, y = 0, s = 1, r = 0, sy) {
+  e.setAttribute('transform', `translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${r.toFixed(2)}) scale(${s.toFixed(4)} ${(sy ?? s).toFixed(4)})`);
+}
+function op(e, o) { e.setAttribute('opacity', Math.max(0, Math.min(1, o)).toFixed(3)); }
+function show(e, v) { e.style.display = v ? '' : 'none'; }
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const E = {
+  out: p => 1 - Math.pow(1 - p, 3),
+  in: p => p * p * p,
+  io: p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+  back: p => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); },
+};
+const pop = (t, t0, d = 0.35) => t < t0 ? 0 : E.back(seg(t, t0, t0 + d));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const mctx = document.createElement('canvas').getContext('2d');
+function measure(str, size, family, weight = 900) { mctx.font = `${weight} ${size}px ${family}`; return mctx.measureText(str).width; }
+
+// ---- readcheck: every on-screen text registered here ----
+const TX = [];
+function regText(t0, t1, str, x0, y0, x1, y1) { TX.push({ t0, t1, text: str, x0, y0, x1, y1 }); }
+
+// per-character text (pop in char by char), optional misregistration shadow
+function chars(parent, str, o) {
+  const { x, y, size, family, weight = 900, fill = C.navy, anchor = 'start', ls = 0, shadow, stroke, sw = 0 } = o;
+  const g = el('g', {}, parent);
+  const arr = [...str];
+  const widths = arr.map(c => measure(c, size, family, weight));
+  const total = widths.reduce((a, b) => a + b, 0) + ls * (arr.length - 1);
+  let cx = anchor === 'middle' ? x - total / 2 : anchor === 'end' ? x - total : x;
+  const items = arr.map((ch, i) => {
+    const cg = el('g', {}, g);
+    const base = { x: 0, y: 0, 'font-size': size, 'font-family': family, 'font-weight': weight, 'text-anchor': 'middle' };
+    if (shadow) txt(cg, ch, { ...base, x: shadow.dx, y: shadow.dy, fill: shadow.fill, class: 'mul' });
+    const st = stroke ? { stroke, 'stroke-width': sw, 'paint-order': 'stroke', 'stroke-linejoin': 'round' } : {};
+    txt(cg, ch, { ...base, fill, ...st });
+    const it = { g: cg, x: cx + widths[i] / 2, y, w: widths[i], size };
+    cx += widths[i] + ls;
+    tf(cg, it.x, it.y);
+    return it;
+  });
+  return { g, items, total };
+}
+function charsPop(c, t, t0, stagger = 0.05, d = 0.38, from = 60) {
+  c.items.forEach((it, i) => {
+    const s = t0 + i * stagger;
+    const p = seg(t, s, s + d);
+    const h = it.size * 0.35;
+    if (t < s) { op(it.g, 0); return; }
+    op(it.g, 1);
+    const sc = E.back(p);
+    const sq = 1 + 0.25 * Math.sin(p * Math.PI) * (1 - p);
+    it.g.setAttribute('transform', `translate(${it.x} ${it.y + from * (1 - E.out(p))}) translate(0 ${-h}) scale(${(sc / sq).toFixed(3)} ${(sc * sq).toFixed(3)}) translate(0 ${h})`);
+  });
+}
+
+// halftone dots: f(x,y) → 0..1 dot size
+function halftone(parent, { x0 = 0, y0 = 0, w = 1920, h = 1080, step = 22, angle = 15, color, f, maxK = 0.62 }) {
+  const a = angle * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const n = Math.ceil(Math.hypot(w, h) / step / 2) + 2;
+  let d = '';
+  for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+    const u = i * step, v = j * step;
+    const x = x0 + w / 2 + u * ca - v * sa, y = y0 + h / 2 + u * sa + v * ca;
+    if (x < x0 - step || x > x0 + w + step || y < y0 - step || y > y0 + h + step) continue;
+    const s = clamp(f(x, y)); if (s < 0.05) continue;
+    const r = s * step * maxK;
+    d += `M${(x - r).toFixed(1)} ${y.toFixed(1)}a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(2 * r).toFixed(1)} 0a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(-2 * r).toFixed(1)} 0`;
+  }
+  return el('path', { d, fill: color }, parent);
+}
+const radial = (cx, cy, R, pw = 1.2) => (x, y) => Math.pow(clamp(1 - Math.hypot(x - cx, y - cy) / R), pw);
+const edge = (R = 900, pw = 1.6) => (x, y) => Math.pow(clamp(Math.hypot(x - 960, y - 540) / R - 0.35), pw) * 1.3;
+
+function bg(parent, color) { return el('rect', { width: 1920, height: 1080, fill: color }, parent); }
+
+// subtitle bar (carries every spoken-line duty — no voice in this film)
+function caption(parent, parts, { x = 960, y = 980, size = 46 } = {}) {
+  const g = el('g', {}, parent);
+  const inner = el('g', {}, g);
+  const w = parts.reduce((a, [s]) => a + measure(s, size, F.sans, 900), 0);
+  const padX = 34, hgt = size * 1.7;
+  el('rect', { x: -w / 2 - padX + 8, y: -hgt / 2 + 8, width: w + padX * 2, height: hgt, rx: 14, fill: C.pink, class: 'mul' }, inner);
+  el('rect', { x: -w / 2 - padX, y: -hgt / 2, width: w + padX * 2, height: hgt, rx: 14, fill: C.navy }, inner);
+  const t = el('text', { x: -w / 2, y: size * 0.36, 'font-size': size, 'font-family': F.sans, 'font-weight': 900 }, inner);
+  parts.forEach(([s, col]) => { const sp = el('tspan', { fill: col || C.cream }, t); sp.textContent = s; });
+  return { g, inner, x, y, w: w + padX * 2, h: hgt };
+}
+function captionAnim(c, t, t0) {
+  const p = seg(t, t0, t0 + 0.4);
+  if (t < t0) { op(c.g, 0); return; }
+  op(c.g, seg(t, t0, t0 + 0.12));
+  tf(c.g, c.x, c.y + 40 * (1 - E.out(p)), lerp(0.8, 1, E.back(p)), -1.2 * (1 - p) - 0.6);
+}
+
+// stamp
+function stampEl(parent, str, { size = 200, color = C.red, family = F.sans, padX = 50, padY = 26, border = 12 } = {}) {
+  const g = el('g', {}, parent);
+  const inner = el('g', { filter: 'url(#stampInk)' }, g);
+  const w = measure(str, size, family, 900) + padX * 2, h = size * 1.08 + padY * 2;
+  el('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 22, fill: 'none', stroke: color, 'stroke-width': border }, inner);
+  el('rect', { x: -w / 2 + border * 1.8, y: -h / 2 + border * 1.8, width: w - border * 3.6, height: h - border * 3.6, rx: 12, fill: 'none', stroke: color, 'stroke-width': border * 0.35 }, inner);
+  txt(inner, str, { x: 0, y: size * 0.36, 'font-size': size, 'font-family': family, 'font-weight': 900, fill: color, 'text-anchor': 'middle' });
+  return { g, w, h };
+}
+function stampAnim(s, t, t0, x, y, rot) {
+  if (t < t0 - 0.09) { op(s.g, 0); return; }
+  const p = seg(t, t0 - 0.09, t0);
+  const after = Math.max(0, t - t0);
+  const bounce = 1 + 0.05 * Math.sin(after * 30) * Math.exp(-after * 9);
+  op(s.g, p < 1 ? 0.3 + 0.7 * p : 0.93);
+  tf(s.g, x, y, lerp(2.6, 1, E.in(p)) * bounce, rot);
+}
+
+// ============================================================
+// people: the student and the teacher — chunky ink-outline rigs
+// ============================================================
+const LW = 7;
+const STK = { stroke: C.navy, 'stroke-width': LW, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+
+function kidHead(parent, { glasses = false, mustache = false, hair = C.navy } = {}) {
+  const g = el('g', {}, parent);
+  el('path', { d: 'M -92 -14 C -98 -100 -50 -140 0 -140 C 50 -140 98 -100 92 -14 C 92 4 86 10 76 10 L -76 10 C -86 10 -92 4 -92 -14 Z', fill: hair, ...STK }, g);
+  el('path', { d: 'M -76 8 C -76 72 -42 104 0 104 C 42 104 76 72 76 8 C 76 -32 42 -58 0 -58 C -42 -58 -76 -32 -76 8 Z', fill: C.skin, ...STK }, g);
+  el('path', { d: 'M -76 4 C -58 -32 -28 -48 0 -48 C 28 -48 58 -32 76 4 C 62 -12 38 -20 0 -20 C -38 -20 -62 -12 -76 4 Z', fill: hair, ...STK }, g);
+  const mkEye = (x) => {
+    const eg = el('g', {}, g);
+    const open = el('g', {}, eg);
+    const pupil = el('g', {}, open);
+    el('ellipse', { cx: 0, cy: 0, rx: 15, ry: 19, fill: C.navy }, pupil);
+    el('circle', { cx: 5, cy: -7, r: 6, fill: C.cream }, pupil);
+    el('circle', { cx: -5, cy: 8, r: 2.6, fill: C.cream }, pupil);
+    const closed = el('path', { d: 'M -16 -2 Q 0 12 16 -2', fill: 'none', stroke: C.navy, 'stroke-width': 6, 'stroke-linecap': 'round' }, eg);
+    const sad = el('path', { d: 'M -16 8 Q 0 -8 16 8', fill: 'none', stroke: C.navy, 'stroke-width': 6, 'stroke-linecap': 'round' }, eg);
+    return { g: eg, open, pupil, closed, sad, x, y: 26 };
+  };
+  const eyeL = mkEye(-38), eyeR = mkEye(38);
+  el('ellipse', { cx: -58, cy: 52, rx: 16, ry: 9, fill: C.pink, opacity: .7 }, g);
+  el('ellipse', { cx: 58, cy: 52, rx: 16, ry: 9, fill: C.pink, opacity: .7 }, g);
+  const mouth = el('path', { d: 'M -16 66 Q 0 78 16 66', fill: 'none', stroke: C.navy, 'stroke-width': 5.5, 'stroke-linecap': 'round' }, g);
+  const mouthSad = el('path', { d: 'M -16 74 Q 0 62 16 74', fill: 'none', stroke: C.navy, 'stroke-width': 5.5, 'stroke-linecap': 'round' }, g);
+  const mouthO = el('g', {}, g);
+  el('path', { d: 'M -14 64 Q 0 96 14 64 Z', fill: C.navy, stroke: C.navy, 'stroke-width': 4, 'stroke-linejoin': 'round' }, mouthO);
+  if (glasses) {
+    el('circle', { cx: -38, cy: 26, r: 26, fill: 'none', stroke: C.navy, 'stroke-width': 6 }, g);
+    el('circle', { cx: 38, cy: 26, r: 26, fill: 'none', stroke: C.navy, 'stroke-width': 6 }, g);
+    el('path', { d: 'M -12 24 L 12 24', stroke: C.navy, 'stroke-width': 6, 'stroke-linecap': 'round' }, g);
+  }
+  if (mustache) el('path', { d: 'M -22 58 Q -10 52 0 56 Q 10 52 22 58', fill: 'none', stroke: C.navy, 'stroke-width': 7, 'stroke-linecap': 'round' }, g);
+  return { g, eyeL, eyeR, mouth, mouthSad, mouthO };
+}
+// open: eyes 0..1; look: pupil offset; mood: 'plain'|'sad'|'talk'
+function setFace(kid, { open = 1, lookX = 0, lookY = 0, mood = 'plain' } = {}) {
+  for (const e of [kid.eyeL, kid.eyeR]) {
+    tf(e.g, e.x, e.y);
+    show(e.open, open > 0.18 && mood !== 'sad'); show(e.closed, open <= 0.18 && mood !== 'sad'); show(e.sad, mood === 'sad');
+    e.open.setAttribute('transform', `scale(1 ${Math.max(open, 0.18).toFixed(3)})`);
+    tf(e.pupil, lookX, lookY);
+  }
+  show(kid.mouth, mood === 'plain');
+  show(kid.mouthSad, mood === 'sad');
+  show(kid.mouthO, mood === 'talk');
+}
+function blinkAt(t, times, d = 0.16) {
+  let o = 1;
+  for (const b of times) { const p = seg(t, b, b + d); if (p > 0 && p < 1) o = Math.min(o, Math.abs(1 - 2 * p)); }
+  return o;
+}
+// full body, origin at hip centre; standing, arms down
+function kidStand(parent, { shirt = C.yellow } = {}) {
+  const g = el('g', { filter: 'url(#boil)' }, parent);
+  const legs = el('g', {}, g);
+  for (const x of [-34, 34]) {
+    el('rect', { x: x - 20, y: 60, width: 40, height: 150, rx: 18, fill: C.navy }, legs);
+    el('ellipse', { cx: x, cy: 218, rx: 30, ry: 18, fill: C.cream, ...STK }, legs);
+  }
+  const torso = el('g', {}, g);
+  el('path', { d: 'M -74 -60 C -80 -30 -80 40 -70 66 L 70 66 C 80 40 80 -30 74 -60 C 40 -80 -40 -80 -74 -60 Z', fill: shirt, ...STK }, torso);
+  el('path', { d: 'M -40 -8 C -46 24 -42 48 0 52 C 42 48 46 24 40 -8 C 20 -18 -20 -18 -40 -8 Z', fill: C.cream, opacity: .55 }, torso);
+  const arms = el('g', {}, g);
+  for (const sx of [-1, 1]) {
+    const ag = el('g', {}, arms);
+    el('rect', { x: -16, y: -46, width: 32, height: 128, rx: 16, fill: shirt, ...STK, transform: `translate(${sx * 86} 0) rotate(${sx * 8})` }, ag);
+    el('circle', { cx: sx * 86 + sx * 22, cy: 84, r: 17, fill: C.skin, ...STK }, ag);
+  }
+  const headWrap = el('g', {}, g);
+  const head = kidHead(headWrap);
+  tf(headWrap, 0, -130);
+  return { g, legs, torso, arms, headWrap, head };
+}
+
+// ============================================================
+// stage
+// ============================================================
+const world = document.getElementById('world');
+const cam = document.getElementById('cam');
+const hud = document.getElementById('hud');
+const wipe = document.getElementById('wipe');
+const flash = document.getElementById('flash');
+const fade = document.getElementById('fade');
+const defs = document.querySelector('defs');
+const scenes = [];
+let hudUpdate = () => {}, wipeUpdate = () => {};
+function scene(t0, t1, build) {
+  const g = el('g', {}, world);
+  const s = { g, t0, t1 };
+  s.update = build(g, s);
+  scenes.push(s);
+  return s;
+}
+
+// giant halftone numeral (flat fill overprinted with darker dots clipped to the glyph)
+function bigNum(parent, str, x, y, size, fill, dotColor, clipId, rot = 0) {
+  const cp = el('clipPath', { id: clipId }, defs);
+  txt(cp, str, { x: 0, y: size * 0.34, 'font-size': size, 'font-family': F.bagel, 'font-weight': 400, 'text-anchor': 'middle' });
+  const g = el('g', {}, parent);
+  const w = measure(str, size, F.bagel, 400) || size;
+  txt(g, str, { x: 0, y: size * 0.34, 'font-size': size, 'font-family': F.bagel, 'font-weight': 400, fill, 'text-anchor': 'middle' });
+  const dotsWrap = el('g', { 'clip-path': `url(#${clipId})` }, g);
+  halftone(dotsWrap, { x0: -w, y0: -size, w: w * 2, h: size * 1.5, step: 22, angle: 30, color: dotColor, f: (px, py) => 0.5 + 0.5 * clamp(1 - Math.hypot(px, py - size * 0.2) / (size * 1.2)), maxK: 0.6 }).setAttribute('class', 'mul');
+  tf(g, x, y, 1, rot);
+  return { g, w, size };
+}
+
+// ---------- S1 0.0–4.2  hook: the challenge ----------
+function buildAll() {
+scene(0, 4.2, (g) => {
+  bg(g, C.night);
+  halftone(g, { color: C.night2, step: 24, angle: 45, f: edge(1000, 1.4), maxK: 0.62 }).setAttribute('class', 'mul');
+  const h1 = chars(g, '你信不信？', { x: 960, y: 420, size: 170, family: F.serif, fill: C.cream, anchor: 'middle', shadow: { fill: C.red, dx: 9, dy: 9 } });
+  // second line with the keyword in yellow
+  const S2A = '热水比冷水', S2B = '先结冰';
+  const wa = measure(S2A, 110, F.serif, 900), wb = measure(S2B, 110, F.serif, 900);
+  const x0 = 960 - (wa + wb) / 2;
+  const h2a = chars(g, S2A, { x: x0, y: 660, size: 110, family: F.serif, fill: C.cream, anchor: 'start', shadow: { fill: C.blue, dx: 7, dy: 7 } });
+  const h2b = chars(g, S2B, { x: x0 + wa, y: 660, size: 110, family: F.serif, fill: C.yellow, anchor: 'start', shadow: { fill: C.navy, dx: 7, dy: 7 } });
+  const st = stampEl(g, '真事。', { size: 150, color: C.red });
+  regText(0.15, 4.2, '你信不信？', 960 - h1.total / 2 - 20, 420 - 170, 960 + h1.total / 2 + 20, 440);
+  regText(0.35, 4.2, '热水比冷水先结冰', x0 - 10, 660 - 110, x0 + wa + wb + 10, 680);
+  return (t) => {
+    charsPop(h1, t, 0.15, 0.05);
+    charsPop(h2a, t, 0.35, 0.03, 0.28);
+    charsPop(h2b, t, 0.53, 0.03, 0.28);
+    stampAnim(st, t, 2.4, 960, 880, -6);
+  };
+});
+
+// ---------- S2 4.2–7.8  file cover (children centred at origin; group lands at 960,540) ----------
+scene(4.2, 7.8, (g) => {
+  bg(g, C.paper);
+  const cov = el('g', {}, g);
+  el('rect', { x: -760, y: -410, width: 1520, height: 850, rx: 26, fill: C.blue, ...STK }, cov);
+  el('rect', { x: -720, y: -370, width: 1440, height: 770, rx: 14, fill: 'none', stroke: C.cream, 'stroke-width': 5, 'stroke-dasharray': '20 14', opacity: .8 }, cov);
+  halftone(cov, { x0: -760, y0: -410, w: 1520, h: 850, step: 24, angle: 20, color: C.navy, f: radial(0, 0, 950, 1.4), maxK: 0.5 }).setAttribute('class', 'mul');
+  const caseNo = txt(cov, 'CASE No.1963-MPE', { x: 0, y: -220, 'font-size': 54, 'font-family': F.mono, 'font-weight': 800, fill: C.yellow, 'text-anchor': 'middle', 'letter-spacing': 6 });
+  const title = chars(cov, '姆潘巴悬案', { x: 0, y: 0, size: 200, family: F.serif, fill: C.cream, anchor: 'middle', shadow: { fill: C.navy, dx: 10, dy: 10 } });
+  const sub = txt(cov, '六十年无定论', { x: 0, y: 160, 'font-size': 44, 'font-family': F.serif, 'font-weight': 900, fill: C.cream, 'text-anchor': 'middle', opacity: .92 });
+  const st = stampEl(cov, '悬案', { size: 140, color: C.red });
+  regText(4.7, 7.8, '姆潘巴悬案', 960 - title.total / 2 - 20, 340, 960 + title.total / 2 + 20, 740);
+  regText(4.6, 7.8, 'CASE No.1963-MPE', 640, 270, 1280, 330);
+  regText(4.6, 7.8, '六十年无定论', 960 - 180, 660, 960 + 180, 710);
+  return (t) => {
+    const cp = E.back(seg(t, 4.25, 4.65));
+    tf(cov, 960, lerp(1160, 540, cp), lerp(0.92, 1, cp), 0, lerp(0.94, 1, cp));
+    op(caseNo, seg(t, 4.6, 4.9));
+    op(sub, seg(t, 5.6, 5.9));
+    charsPop(title, t, 4.7, 0.07);
+    stampAnim(st, t, 5.4, 585, -310, -9);
+  };
+});
+
+// ---------- S3 7.8–15.6  exhibit 01: 1963 Tanzania ----------
+scene(7.8, 15.6, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.yellow, step: 22, angle: 15, f: radial(1600, 250, 620, 1.1), maxK: 0.6 });
+  const num = bigNum(g, '01', 1680, 780, 640, C.yellow, C.pink, 'clipN01', 0);
+  const head = chars(g, '一九六三年 · 坦桑尼亚', { x: 120, y: 260, size: 110, family: F.serif, fill: C.navy, shadow: { fill: C.yellow, dx: 8, dy: 8 } });
+  regText(8.3, 15.6, '一九六三年 · 坦桑尼亚', 100, 260 - 110, 100 + head.total + 20, 280);
+  // freezer with door (right-centre)
+  const fz = el('g', {}, g);
+  el('rect', { x: 1180, y: 330, width: 480, height: 560, rx: 22, fill: C.cream, ...STK }, fz);
+  el('rect', { x: 1230, y: 390, width: 380, height: 440, rx: 12, fill: C.night2 }, fz);
+  for (const sy of [510, 640]) el('path', { d: `M 1230 ${sy} L 1610 ${sy}`, stroke: C.cream, 'stroke-width': 8 }, fz);
+  const door = el('g', {}, fz);
+  el('rect', { x: 1176, y: 330, width: 84, height: 560, rx: 16, fill: C.cream, ...STK }, door);
+  el('rect', { x: 1196, y: 560, width: 44, height: 90, rx: 10, fill: C.navy }, door);
+  // pots inside: his (yellow → blue → white as it cools and freezes) + plain blue ones
+  const potHot = el('g', {}, fz);
+  el('rect', { x: 1270, y: 420, width: 130, height: 80, rx: 12, fill: C.yellow, ...STK }, potHot);
+  const liqBlue = el('rect', { x: 1270, y: 420, width: 130, height: 80, rx: 12, fill: C.blue }, potHot);
+  const liqIce = el('rect', { x: 1270, y: 420, width: 130, height: 80, rx: 12, fill: '#E9F0F8' }, potHot);
+  // the freeze: crystal blocks pop onto the pot one by one — bigger and deeper-coloured over time
+  const ICEC = ['#FFF7EA', '#DCE9F6', '#B7CFEA', '#8FB4DC'];
+  const CRY = [
+    { x: 1292, y: 448, r: 13 }, { x: 1322, y: 472, r: 16 }, { x: 1352, y: 445, r: 15 },
+    { x: 1381, y: 470, r: 13 }, { x: 1337, y: 498, r: 11 },
+  ];
+  const crystals = CRY.map((c, i) => {
+    const cg = el('g', {}, fz);
+    const dia = el('path', { d: `M 0 ${-c.r} L ${c.r * 0.7} 0 L 0 ${c.r} L ${-c.r * 0.7} 0 Z`, fill: ICEC[0], ...STK }, cg);
+    el('path', { d: `M ${-c.r * 0.7} 0 L ${-c.r * 1.15} ${-c.r * 0.3} M ${c.r * 0.7} 0 L ${c.r * 1.15} ${-c.r * 0.3}`, stroke: C.navy, 'stroke-width': 4, fill: 'none', 'stroke-linecap': 'round' }, cg);
+    return { cg, dia, t0: 11.7 + i * 0.18, x: c.x, y: c.y };
+  });
+  const frost = el('g', { filter: 'url(#boil)' }, fz);
+  for (let i = 0; i < 30; i++) {
+    const rr = rng(100 + i);
+    el('circle', { cx: 1266 + rr() * 138, cy: 428 + rr() * 66, r: 3 + rr() * 5, fill: C.cream }, frost);
+  }
+  const potA = el('g', {}, fz);
+  el('rect', { x: 1440, y: 420, width: 120, height: 80, rx: 12, fill: C.blue, ...STK }, potA);
+  el('rect', { x: 1280, y: 550, width: 120, height: 80, rx: 12, fill: C.blue, ...STK }, potA);
+  el('rect', { x: 1450, y: 550, width: 120, height: 80, rx: 12, fill: C.blue, ...STK }, potA);
+  // the student, left
+  const kidG = el('g', {}, g);
+  const kid = kidStand(kidG, { shirt: C.yellow });
+  // steam above the pot he carries
+  const steam = el('g', { filter: 'url(#boil)' }, g);
+  for (let i = 0; i < 4; i++) el('circle', { cx: 0, cy: 0, r: 14 + i * 3, fill: C.cream, opacity: .8 }, steam);
+  // clock chip
+  const clock = el('g', {}, g);
+  el('rect', { x: 1180, y: 250, width: 480, height: 70, rx: 12, fill: C.navy }, clock);
+  const clockT = txt(clock, '1.5 HOURS LATER', { x: 1420, y: 298, 'font-size': 40, 'font-family': F.mono, 'font-weight': 800, fill: C.cream, 'text-anchor': 'middle' });
+  regText(12.55, 15.6, '1.5 HOURS LATER', 1250, 260, 1590, 310);
+  // teacher + bubble
+  const tchG = el('g', {}, g);
+  const tch = kidStand(tchG, { shirt: C.blue });
+  const bub = el('g', {}, g);
+  el('path', { d: 'M -190 -64 C -190 -104 190 -104 190 -64 C 190 -24 100 -18 50 -12 L 6 34 L 2 -8 C -100 -6 -190 -20 -190 -64 Z', fill: C.cream, ...STK }, bub);
+  const bubT = txt(bub, '不可能。', { x: 0, y: -18, 'font-size': 64, 'font-family': F.cute, fill: C.red, 'text-anchor': 'middle' });
+  const cap1 = caption(g, [['热液'], ['直接进了冰柜', C.yellow], ['。']]);
+  const cap2 = caption(g, [['他'], ['先冻住了', C.yellow]]);
+  regText(8.3, 12.3, '热液直接进了冰柜。', 960 - cap1.w / 2, 960, 960 + cap1.w / 2, 1000);
+  regText(12.5, 15.6, '他先冻住了', 960 - cap2.w / 2, 960, 960 + cap2.w / 2, 1000);
+  regText(12.9, 15.6, '不可能。', 1480, 310, 1900, 480);
+  return (t) => {
+    charsPop(head, t, 8.3, 0.05);
+    op(num.g, 0.9 * seg(t, 8.0, 8.5));
+    // student slides in 8.4–9.2
+    const kx = lerp(150, 700, E.out(seg(t, 8.4, 9.2)));
+    tf(kidG, kx, 790, 1.2);
+    setFace(kid.head, { open: blinkAt(t, [10.4, 13.8]), lookX: Math.sin(t * 1.3) * 3, mood: t < 12.6 ? 'plain' : 'sad' });
+    // liquid colour story: yellow (hot) → blue (cooled, 10.9) → white (frozen, 12.3)
+    op(liqBlue, seg(t, 10.9, 11.2));
+    op(liqIce, seg(t, 12.3, 12.6));
+    // steam dies exactly when the liquid turns blue
+    const steamOn = seg(t, 9.0, 9.5) * (1 - seg(t, 10.8, 11.2));
+    op(steam, steamOn);
+    if (steamOn > 0) {
+      const sg = seg(t, 9.3, 9.6);
+      tf(steam, lerp(kx + 150, 1335, sg), lerp(520, 398, sg), 1, 0);
+      for (let i = 0; i < steam.children.length; i++) {
+        steam.children[i].setAttribute('cy', -i * 26 - Math.sin(t * 6 + i) * 6);
+        steam.children[i].setAttribute('cx', Math.sin(t * 4 + i * 2) * 12);
+      }
+    }
+    // freeze beat 11.7–12.5: crystal blocks pop in one by one, growing bigger and deeper
+    crystals.forEach(({ cg, dia, t0, x, y }) => {
+      const p = E.back(seg(t, t0, t0 + 0.3));
+      op(cg, seg(t, t0, t0 + 0.08));
+      const grow = 0.55 + 0.45 * seg(t, 11.7, 12.9);
+      tf(cg, x, y, p * grow);
+      dia.setAttribute('fill', ICEC[Math.min(3, Math.max(0, Math.floor((t - t0) / 0.35)))]);
+    });
+    op(frost, seg(t, 11.7, 12.2));
+    // the clock only pops once the freezing is done
+    op(clock, seg(t, 12.55, 12.85));
+    op(clockT, seg(t, 12.55, 12.85));
+    // teacher enters 12.6
+    const tx = lerp(2200, 1680, E.back(seg(t, 12.5, 13.0)));
+    tf(tchG, tx, 790, 1.2);
+    setFace(tch.head, { open: 1, mood: t > 13.1 ? 'talk' : 'plain' });
+    const bp = pop(t, 12.9, 0.4);
+    op(bub, seg(t, 12.9, 13.0));
+    tf(bub, lerp(1450, 1680, bp), lerp(560, 400, bp), lerp(0.7, 1.2, bp));
+    captionAnim(cap1, t, 8.3);
+    if (t > 12.0) op(cap1.g, Math.max(0, 1 - seg(t, 12.0, 12.3)));   // fade the first card out before the second enters
+    captionAnim(cap2, t, 12.5);
+  };
+});
+
+// ---------- S4 15.6–21.6  exhibit 02: priors board (pan) ----------
+scene(15.6, 21.6, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.blue, step: 22, angle: 60, f: edge(1050, 1.5), maxK: 0.5 }).setAttribute('class', 'mul');
+  const head = chars(g, '两千年前，就有人报过案', { x: 520, y: 250, size: 105, family: F.serif, fill: C.navy, shadow: { fill: C.pink, dx: 8, dy: 8 } });
+  regText(15.9, 21.6, '两千年前，就有人报过案', 500, 250 - 105, 500 + head.total + 20, 270);
+  const board = el('g', {}, g);
+  el('rect', { x: 60, y: 330, width: 2260, height: 560, rx: 20, fill: C.cream, ...STK }, board);
+  el('rect', { x: 84, y: 354, width: 2212, height: 512, rx: 12, fill: '#EFE2C8' }, board);
+  halftone(board, { x0: 60, y0: 330, w: 2260, h: 560, step: 26, angle: 40, color: C.navy, f: edge(1200, 1.6), maxK: 0.32 }).setAttribute('class', 'mul');
+  // numeral drawn AFTER the board so the pinned cards slide beneath it
+  const num = bigNum(g, '02', 1730, 720, 460, C.blue, C.pink, 'clipN02', -3);
+  const CARDS = [
+    { x: 460, yr: '公元前 350', nm: '亚里士多德', q: '「温热的水，凉得更快」' },
+    { x: 960, yr: '1620', nm: '培根', q: '「微温的水更易冻」' },
+    { x: 1460, yr: '1637', nm: '笛卡尔', q: '「久置冻得更快」' },
+  ];
+  const cardGs = CARDS.map((c, i) => {
+    const cg = el('g', {}, board);
+    el('rect', { x: -190, y: -130, width: 380, height: 260, rx: 10, fill: C.cream, ...STK }, cg);
+    el('path', { d: 'M -190 -88 L 190 -88', stroke: C.pink, 'stroke-width': 4 }, cg);
+    txt(cg, c.yr, { x: -160, y: -40, 'font-size': 44, 'font-family': F.mono, 'font-weight': 800, fill: C.blue });
+    txt(cg, c.nm, { x: 0, y: 30, 'font-size': 62, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+    txt(cg, c.q, { x: 0, y: 96, 'font-size': 30, 'font-family': F.sans, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle', opacity: .85 });
+    el('circle', { cx: 0, cy: -130, r: 14, fill: C.red, ...STK }, cg);
+    el('circle', { cx: -4, cy: -134, r: 4, fill: C.cream }, cg);
+    regText(16.3 + i, 21.6, c.nm + ' ' + c.yr, c.x - 180, 500, c.x + 180, 690);
+    regText(16.3 + i, 21.6, c.q, c.x - 180, 690, c.x + 180, 760);
+    return { cg, t0: 16.3 + i * 0.85, x: c.x };
+  });
+  return (t) => {
+    charsPop(head, t, 15.9, 0.05);
+    const px = lerp(30, -70, E.io(seg(t, 16.0, 21.2)));
+    tf(board, px, 0);
+    cardGs.forEach(({ cg, t0, x }) => {
+      const p = pop(t, t0, 0.4);
+      op(cg, seg(t, t0, t0 + 0.1));
+      tf(cg, x, 640 + 160 * (1 - p), 1);
+    });
+    op(num.g, 0.85 * seg(t, 15.7, 16.2));
+  };
+});
+
+// ---------- S5 21.6–28.8  exhibit 03: 1969 replication ----------
+scene(21.6, 28.8, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.yellow, step: 22, angle: 25, f: radial(400, 900, 700, 1.1), maxK: 0.55 });
+  const num = bigNum(g, '03', 1640, 300, 520, C.pink, C.blue, 'clipN03', 2);
+  const head = chars(g, '一九六九年，重查此案', { x: 120, y: 250, size: 110, family: F.serif, fill: C.navy, shadow: { fill: C.yellow, dx: 8, dy: 8 } });
+  regText(21.9, 28.8, '一九六九年，重查此案', 100, 250 - 110, 100 + head.total + 20, 270);
+  const bench = el('g', {}, g);
+  el('rect', { x: 260, y: 700, width: 1000, height: 26, rx: 8, fill: C.navy }, bench);
+  el('rect', { x: 330, y: 726, width: 40, height: 200, fill: C.navy }, bench);
+  el('rect', { x: 1150, y: 726, width: 40, height: 200, fill: C.navy }, bench);
+  const mkBeaker = (x, liquid, hot) => {
+    const b = el('g', {}, g);
+    el('path', { d: 'M -62 -170 L 62 -170 L 48 66 Q 0 80 -48 66 Z', fill: C.cream, opacity: .5, ...STK }, b);
+    el('path', { d: `M -50 ${hot ? 10 : -10} L 50 ${hot ? 10 : -10} L 46 64 Q 0 76 -46 64 Z`, fill: liquid }, b);
+    el('path', { d: 'M -62 -170 L 62 -170', stroke: C.navy, 'stroke-width': 8, 'stroke-linecap': 'round' }, b);
+    el('path', { d: 'M 0 -150 L 0 20', stroke: C.navy, 'stroke-width': 6, 'stroke-linecap': 'round' }, b);
+    el('circle', { cx: 0, cy: 30, r: 12, fill: hot ? C.red : C.blue, ...STK }, b);
+    tf(b, x, 700);
+    return b;
+  };
+  mkBeaker(520, C.yellow, true);
+  mkBeaker(980, C.blue, false);
+  const rHot = txt(g, '75.0°C', { x: 520, y: 480, 'font-size': 52, 'font-family': F.mono, 'font-weight': 800, fill: C.red, 'text-anchor': 'middle' });
+  const rCold = txt(g, '22.0°C', { x: 980, y: 480, 'font-size': 52, 'font-family': F.mono, 'font-weight': 800, fill: C.blue, 'text-anchor': 'middle' });
+  const lblHot = txt(g, '热水', { x: 520, y: 850, 'font-size': 44, 'font-family': F.sans, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+  const lblCold = txt(g, '冷水', { x: 980, y: 850, 'font-size': 44, 'font-family': F.sans, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+  regText(21.9, 28.8, '75.0°C', 420, 430, 620, 490);
+  regText(21.9, 28.8, '22.0°C', 880, 430, 1080, 490);
+  regText(21.9, 28.8, '热水', 470, 810, 570, 860);
+  regText(21.9, 28.8, '冷水', 930, 810, 1030, 860);
+  const burst = el('g', {}, g);
+  {
+    let d = '', pts = 28;
+    for (let i = 0; i < pts * 2; i++) {
+      const rr = i % 2 ? 78 : 168, a = i * Math.PI / pts;
+      d += (i ? 'L' : 'M') + (Math.cos(a) * rr).toFixed(1) + ' ' + (Math.sin(a) * rr).toFixed(1);
+    }
+    el('path', { d: d + 'Z', fill: C.yellow, ...STK }, burst);
+    txt(burst, '先冻！', { x: 0, y: 24, 'font-size': 64, 'font-family': F.cute, fill: C.red, 'text-anchor': 'middle' });
+  }
+  const card = el('g', {}, g);
+  el('rect', { x: -230, y: -80, width: 460, height: 160, rx: 12, fill: C.cream, ...STK }, card);
+  txt(card, 'Cool? (1969)', { x: 0, y: -6, 'font-size': 52, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle' });
+  txt(card, '与奥斯本合著', { x: 0, y: 52, 'font-size': 30, 'font-family': F.sans, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+  const st = stampEl(g, '实测复现', { size: 110, color: C.red });
+  regText(25.7, 28.8, 'Cool? (1969)', 960 - 230, 620, 960 + 230, 700);
+  regText(25.7, 28.8, '与奥斯本合著', 960 - 120, 700, 960 + 120, 760);
+  return (t) => {
+    charsPop(head, t, 21.9, 0.05);
+    op(num.g, 0.85 * seg(t, 21.7, 22.2));
+    const p = seg(t, 22.5, 25.0);
+    rHot.textContent = lerp(75, -4, E.io(p)).toFixed(1) + '°C';
+    rCold.textContent = lerp(22, 4, E.io(seg(t, 22.5, 25.6))).toFixed(1) + '°C';
+    op(burst, seg(t, 25.2, 25.5));
+    tf(burst, 520, 560 + (1 - seg(t, 25.2, 25.7)) * 60, lerp(0.5, 1, E.back(seg(t, 25.2, 25.6))), Math.sin(t * 3) * 3);
+    const cp = pop(t, 25.7, 0.4);
+    op(card, seg(t, 25.7, 25.8));
+    tf(card, 960, lerp(1160, 700, cp), lerp(0.8, 1, cp));
+    stampAnim(st, t, 27.6, 1450, 850, -8);
+  };
+});
+
+// ---------- S6 28.8–37.2  suspect board: five hypotheses ----------
+scene(28.8, 37.2, (g) => {
+  bg(g, C.night);
+  halftone(g, { color: C.night2, step: 24, angle: 30, f: edge(1000, 1.4), maxK: 0.6 }).setAttribute('class', 'mul');
+  const head = chars(g, '五个嫌疑人，全都不认账', { x: 960, y: 210, size: 100, family: F.serif, fill: C.cream, anchor: 'middle', shadow: { fill: C.blue, dx: 8, dy: 8 } });
+  regText(29.1, 37.2, '五个嫌疑人，全都不认账', 960 - head.total / 2 - 20, 210 - 100, 960 + head.total / 2 + 20, 230);
+  const board = el('g', {}, g);
+  el('rect', { x: 140, y: 300, width: 1640, height: 560, rx: 20, fill: '#3A4470', ...STK }, board);
+  halftone(board, { x0: 140, y0: 300, w: 1640, h: 560, step: 26, angle: 50, color: C.night2, f: edge(900, 1.4), maxK: 0.45 }).setAttribute('class', 'mul');
+  const SUS = [
+    { x: 420, y: 470, nm: '蒸发', tag: '说不清', col: C.yellow },
+    { x: 870, y: 430, nm: '对流', tag: '只对一半', col: C.blue },
+    { x: 1310, y: 470, nm: '溶解气体', tag: '缺证据', col: C.pink },
+    { x: 560, y: 720, nm: '过冷', tag: '不稳定', col: C.cream },
+    { x: 1180, y: 720, nm: '氢键', tag: '存疑', col: C.yellow },
+  ];
+  const cardGs = SUS.map((s, i) => {
+    const cg = el('g', {}, board);
+    el('rect', { x: -140, y: -95, width: 280, height: 190, rx: 10, fill: C.cream, ...STK }, cg);
+    txt(cg, s.nm, { x: 0, y: 14, 'font-size': 66, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+    el('rect', { x: -70, y: 34, width: 140, height: 44, rx: 8, fill: C.navy }, cg);
+    txt(cg, s.tag, { x: 0, y: 66, 'font-size': 28, 'font-family': F.sans, 'font-weight': 900, fill: s.col, 'text-anchor': 'middle' });
+    el('circle', { cx: 0, cy: -95, r: 13, fill: C.red, ...STK }, cg);
+    regText(29.4 + i * 1.2, 37.2, s.nm + ' ' + s.tag, s.x - 140, s.y - 95, s.x + 140, s.y + 95);
+    return { cg, t0: 29.4 + i * 1.2, s };
+  });
+  const str2 = el('path', { d: 'M 420 470 L 870 430 L 1310 470 M 870 430 L 560 720 M 870 430 L 1180 720', stroke: C.cream, 'stroke-width': 4, fill: 'none', 'stroke-dasharray': '12 9' }, board);
+  const cap = caption(g, [['五个假说，'], ['没有一个全对', C.yellow]]);
+  regText(32.8, 37.2, '五个假说，没有一个全对', 960 - cap.w / 2, 960, 960 + cap.w / 2, 1000);
+  return (t) => {
+    charsPop(head, t, 29.1, 0.05);
+    const sh = 1 - seg(t, 35.2, 35.6);
+    const ox = sh > 0 ? Math.sin(t * 60) * 9 * sh : 0;
+    const oy = sh > 0 ? Math.cos(t * 53) * 7 * sh : 0;
+    tf(board, ox, oy);
+    cardGs.forEach(({ cg, t0, s }) => {
+      const p = pop(t, t0, 0.4);
+      op(cg, seg(t, t0, t0 + 0.1));
+      tf(cg, s.x, s.y + 140 * (1 - p), 1);
+    });
+    op(str2, seg(t, 32.0, 32.4) * 0.7);
+    captionAnim(cap, t, 32.8);
+  };
+});
+
+// ---------- S7 37.2–39.6  redaction page ----------
+scene(37.2, 39.6, (g) => {
+  bg(g, C.paper);
+  const page = el('g', {}, g);
+  el('rect', { x: 560, y: 150, width: 800, height: 780, rx: 10, fill: C.cream, ...STK }, page);
+  txt(page, '报告', { x: 960, y: 270, 'font-size': 72, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+  el('path', { d: 'M 640 310 L 1280 310', stroke: C.navy, 'stroke-width': 4 }, page);
+  const lines = [[640, 380, 560], [640, 440, 620], [640, 500, 480], [640, 560, 600]];
+  lines.forEach(([x, y, w]) => el('rect', { x, y, width: w, height: 22, rx: 8, fill: C.navy, opacity: .28 }, page));
+  const finalLine = txt(page, '答案：', { x: 640, y: 680, 'font-size': 58, 'font-family': F.sans, 'font-weight': 900, fill: C.navy });
+  const bars = [0, 1, 2].map(i => el('rect', { x: 640, y: lines[i][1] - 8, width: 0, height: 38, rx: 6, fill: C.navy }, page));
+  const finalBar = el('rect', { x: 860, y: 640, width: 0, height: 48, rx: 6, fill: C.navy }, page);
+  const mono = txt(g, 'REDACTED', { x: 960, y: 1020, 'font-size': 34, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle', 'letter-spacing': 8 });
+  regText(37.35, 39.6, '报告', 860, 200, 1060, 280);
+  regText(37.38, 39.6, '答案：', 640, 620, 850, 690);
+  regText(37.35, 39.6, 'REDACTED', 960 - 160, 990, 960 + 160, 1030);
+  return (t) => {
+    op(mono, seg(t, 37.35, 37.7));
+    op(finalLine, seg(t, 37.38, 37.7));
+    bars.forEach((b, i) => b.setAttribute('width', 620 * E.out(seg(t, 37.7 + i * 0.3, 38.0 + i * 0.3))));
+    finalBar.setAttribute('width', 250 * E.out(seg(t, 38.7, 39.0)));
+  };
+});
+
+// ---------- S8 39.6–43.8  verdict: UNSOLVED ----------
+scene(39.6, 43.8, (g) => {
+  bg(g, C.paper);
+  const st = stampEl(g, '未结案', { size: 230, color: C.red });
+  const mono = txt(g, 'UNSOLVED', { x: 960, y: 900, 'font-size': 46, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle', 'letter-spacing': 10 });
+  regText(40.2, 43.8, 'UNSOLVED', 960 - 160, 860, 960 + 160, 910);
+  let halo = null, haloR = 0;
+  return (t) => {
+    stampAnim(st, t, 39.6, 960, 520, -6);
+    // halo bloom: rebuild the dot field each frame with the current radius
+    const R = 120 + 680 * E.out(seg(t, 39.7, 41.2));
+    if (t >= 39.7 && Math.abs(R - haloR) > 1) {
+      if (halo) halo.remove();
+      halo = halftone(g, { color: C.pink, step: 24, angle: 45, f: radial(960, 540, R, 1.6), maxK: 0.58 });
+      halo.setAttribute('class', 'mul');
+      g.insertBefore(halo, st.g);
+      haloR = R;
+    }
+    if (halo) op(halo, 0.7 - 0.4 * seg(t, 41.2, 43.8));
+    op(mono, seg(t, 40.2, 40.6));
+  };
+});
+
+// ---------- S9 43.8–48.0  the drawer full of files ----------
+scene(43.8, 48.0, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.yellow, step: 22, angle: 15, f: radial(960, 540, 900, 1.2), maxK: 0.4 });
+  const head = chars(g, '悬案，不止一件', { x: 120, y: 230, size: 105, family: F.serif, fill: C.navy, shadow: { fill: C.pink, dx: 8, dy: 8 } });
+  regText(44.1, 48.0, '悬案，不止一件', 100, 230 - 105, 100 + head.total + 20, 250);
+  const desk = el('g', {}, g);
+  const files = el('g', {}, desk);
+  const r = rng(11);
+  for (let i = 0; i < 14; i++) {
+    const fx = 160 + i * 118 + r() * 20, rot = (r() - 0.5) * 10;
+    const fg = el('g', {}, files);
+    el('rect', { x: 0, y: 0, width: 104, height: 300, rx: 8, fill: i % 3 ? C.cream : C.yellow, ...STK }, fg);
+    el('rect', { x: 16, y: -18, width: 72, height: 30, rx: 6, fill: i % 3 ? C.yellow : C.blue, ...STK }, fg);
+    txt(fg, 'CASE', { x: 52, y: 60, 'font-size': 20, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle' });
+    txt(fg, 'No.' + (1963 + i * 7), { x: 52, y: 92, 'font-size': 20, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle' });
+    tf(fg, fx, 330 + r() * 40, 1, rot);
+  }
+  const mine = el('g', {}, files);
+  el('rect', { x: 0, y: 0, width: 104, height: 300, rx: 8, fill: C.cream, ...STK }, mine);
+  el('rect', { x: 16, y: -18, width: 72, height: 30, rx: 6, fill: C.red, ...STK }, mine);
+  txt(mine, 'MPE', { x: 52, y: 60, 'font-size': 22, 'font-family': F.mono, 'font-weight': 800, fill: C.red, 'text-anchor': 'middle' });
+  const drawer = el('g', {}, desk);
+  el('rect', { x: 100, y: 630, width: 1720, height: 220, rx: 14, fill: C.blue, ...STK }, drawer);
+  el('rect', { x: 880, y: 700, width: 160, height: 40, rx: 18, fill: C.cream, ...STK }, drawer);
+  const cap = caption(g, [['科学不怕悬案']]);
+  regText(44.8, 48.0, '科学不怕悬案', 960 - cap.w / 2, 960, 960 + cap.w / 2, 1000);
+  return (t) => {
+    charsPop(head, t, 44.1, 0.05);
+    tf(mine, 700, lerp(120, 420, E.back(seg(t, 43.9, 44.3))), 1, -2);
+    // pull back about the group's centre — subject stays centred and large
+    const s = lerp(1, 0.8, E.io(seg(t, 44.6, 46.6)));
+    tf(desk, 960 * (1 - s), 590 * (1 - s), s);
+    captionAnim(cap, t, 44.8);
+  };
+});
+
+// ---------- S10 48.0–52.8  end card (folder centred at origin; group lands at 960,430) ----------
+scene(48.0, 52.8, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.blue, step: 24, angle: 20, f: edge(1050, 1.5), maxK: 0.45 }).setAttribute('class', 'mul');
+  const folder = el('g', {}, g);
+  el('rect', { x: -260, y: -180, width: 520, height: 360, rx: 16, fill: C.blue, ...STK }, folder);
+  el('rect', { x: -220, y: -214, width: 200, height: 60, rx: 10, fill: C.blue, ...STK }, folder);
+  txt(folder, 'CASE', { x: 0, y: -40, 'font-size': 64, 'font-family': F.mono, 'font-weight': 800, fill: C.cream, 'text-anchor': 'middle' });
+  txt(folder, '1963-MPE', { x: 0, y: 30, 'font-size': 52, 'font-family': F.mono, 'font-weight': 800, fill: C.yellow, 'text-anchor': 'middle' });
+  const st = stampEl(folder, '未结案', { size: 84, color: C.red });
+  const l1 = chars(g, '就怕没人再问。', { x: 960, y: 780, size: 66, family: F.serif, fill: C.navy, anchor: 'middle', shadow: { fill: C.yellow, dx: 6, dy: 6 } });
+  const l2 = chars(g, '下一个，就是你', { x: 960, y: 890, size: 58, family: F.serif, fill: C.blue, anchor: 'middle', shadow: { fill: C.pink, dx: 5, dy: 5 } });
+  regText(48.4, 52.8, '就怕没人再问。', 960 - l1.total / 2 - 10, 780 - 66, 960 + l1.total / 2 + 10, 800);
+  regText(49.0, 52.8, '下一个，就是你', 960 - l2.total / 2 - 10, 890 - 58, 960 + l2.total / 2 + 10, 910);
+  return (t) => {
+    const fp = pop(t, 48.1, 0.45);
+    op(folder, seg(t, 48.1, 48.2));
+    tf(folder, 960, lerp(1160, 430, fp), lerp(0.9, 1, fp));
+    stampAnim(st, t, 49.4, 0, 125, -7);
+    charsPop(l1, t, 48.4, 0.03, 0.3, 30);
+    charsPop(l2, t, 49.0, 0.03, 0.3, 30);
+  };
+});
+
+// ---------- S11 52.8–54.4  sources — a 1.5 s credit flash ----------
+scene(52.8, 54.4, (g) => {
+  bg(g, C.paper);
+  halftone(g, { color: C.blue, step: 24, angle: 20, f: edge(1050, 1.5), maxK: 0.4 }).setAttribute('class', 'mul');
+  const SRC = [
+    'Mpemba & Osborne 1969',
+    'Aristotle · Bacon · Descartes',
+    'Burridge & Linden 2016',
+  ];
+  const lines = SRC.map((s, i) => {
+    const ln = txt(g, s, { x: 960, y: 430 + i * 120, 'font-size': 46, 'font-family': F.mono, 'font-weight': 800, fill: C.navy, 'text-anchor': 'middle' });
+    return { ln, t0: 52.85 + i * 0.08 };
+  });
+  return (t) => {
+    lines.forEach(({ ln, t0 }, i) => {
+      const p = E.out(seg(t, t0, t0 + 0.3));
+      op(ln, seg(t, t0, t0 + 0.12) * 0.9);
+      ln.setAttribute('y', String(430 + i * 120 + 12 * (1 - p)));
+    });
+  };
+});
+
+// ---------------- HUD ----------------
+const hudG = el('g', {}, hud);
+const caseNo = txt(hudG, 'CASE No.1963-MPE', { x: 60, y: 62, 'font-size': 22, 'font-family': F.mono, 'font-weight': 800 });
+const chip = el('g', {}, hudG);
+const chipBg = el('rect', { x: 60, y: 76, height: 40, rx: 6 }, chip);
+const chipA = txt(chip, '', { x: 74, y: 104, 'font-size': 24, 'font-family': F.sans, 'font-weight': 900 });
+const chipB = txt(chip, '', { y: 104, 'font-size': 24, 'font-family': F.sans, 'font-weight': 900 });
+const date = el('g', {}, hudG);
+const dateBg = el('rect', { x: 1660, y: 40, width: 200, height: 50, rx: 8, fill: 'none', 'stroke-width': 4 }, date);
+const rec = el('circle', { cx: 1686, cy: 65, r: 9, fill: C.red }, date);
+const dateT = txt(date, '1963', { x: 1710, y: 75, 'font-size': 28, 'font-family': F.mono, 'font-weight': 800 });
+const chips = [
+  [4.2, 7.8, '案卷', '封面'], [7.8, 15.6, '物证 01', '1963 · 坦桑尼亚'], [15.6, 21.6, '物证 02', '前科记录'],
+  [21.6, 28.8, '物证 03', '1969 · 复现'], [28.8, 37.2, '嫌疑人', '五个假说'], [37.2, 39.6, '结论页', '涂黑'],
+  [39.6, 43.8, '宣判', '未结案'], [43.8, 52.8, '归档', '悬案不止一件'], [52.8, 54.4, '附件', '参考资料'],
+];
+const chipDark = (t) => (t >= 28.8 && t < 37.2);
+hudUpdate = (t) => {
+  const c = chips.find(c => t >= c[0] && t < c[1]);
+  show(hudG, !!c);
+  if (!c) return;
+  const dark = chipDark(t);
+  const ink = dark ? C.cream : C.navy;
+  caseNo.setAttribute('fill', ink);
+  chipBg.setAttribute('fill', dark ? C.cream : C.navy);
+  chipA.textContent = c[2]; chipA.setAttribute('fill', dark ? C.red : C.yellow);
+  chipB.textContent = c[3]; chipB.setAttribute('fill', dark ? C.navy : C.cream);
+  const wa = measure(c[2], 24, F.sans), wb = measure(c[3], 24, F.sans);
+  chipB.setAttribute('x', 74 + wa + 14);
+  chipBg.setAttribute('width', wa + wb + 42);
+  dateBg.setAttribute('stroke', ink); dateT.setAttribute('fill', ink);
+  dateT.textContent = (t >= 7.8 && t < 15.6) ? '1963' : (t >= 21.6 && t < 28.8) ? '1969' : 'NOW';
+  op(rec, Math.floor(t * 2) % 2 ? 0.25 : 1);
+};
+
+// ---------------- halftone-dot transition ----------------
+const dotsG = el('g', {}, wipe);
+const wipeDots = [];
+for (let y = 0; y <= 1080 + 80; y += 80) for (let x = 0; x <= 1920 + 80; x += 80) {
+  wipeDots.push({ el: el('circle', { cx: x, cy: y, r: 0 }, dotsG), x, y });
+}
+const WIPES = [[4.2, C.yellow], [7.8, C.pink], [15.6, C.blue], [21.6, C.yellow], [28.8, C.night], [37.2, C.cream], [43.8, C.yellow], [48.0, C.pink], [52.8, C.cream]];
+wipeUpdate = (t) => {
+  const w = WIPES.find(([b]) => Math.abs(t - b) < 0.22);
+  show(dotsG, !!w);
+  if (!w) return;
+  dotsG.setAttribute('fill', w[1]);
+  const u = (t - w[0] + 0.22) / 0.44;
+  wipeDots.forEach(d => {
+    const delay = (d.x / 1920 * 0.6 + d.y / 1080 * 0.4) * 0.35;
+    const p = clamp((u - delay) / 0.65);
+    const r = Math.sin(p * Math.PI) * 62;
+    d.el.setAttribute('r', r.toFixed(1));
+  });
+};
+}
+
+// ============================================================
+// paper & grain
+// ============================================================
+function buildPaper() {
+  const cv = document.getElementById('paper'), ctx = cv.getContext('2d');
+  const r = rng(3);
+  const small = document.createElement('canvas'); small.width = 96; small.height = 54;
+  const sctx = small.getContext('2d'); const sim = sctx.createImageData(96, 54);
+  for (let i = 0; i < sim.data.length; i += 4) { const v = 242 + r() * 13; sim.data[i] = sim.data[i + 1] = sim.data[i + 2] = v; sim.data[i + 3] = 255; }
+  sctx.putImageData(sim, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(small, 0, 0, 1920, 1080);
+  const base = ctx.getImageData(0, 0, 1920, 1080);
+  for (let i = 0; i < base.data.length; i += 4) {
+    const n = (r() - 0.5) * 26;
+    base.data[i] = clamp(base.data[i] + n, 0, 255);
+    base.data[i + 1] = clamp(base.data[i + 1] + n, 0, 255);
+    base.data[i + 2] = clamp(base.data[i + 2] + n - 4, 0, 255);
+  }
+  ctx.putImageData(base, 0, 0);
+  const gr = ctx.createRadialGradient(960, 540, 400, 960, 540, 1150);
+  gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(120,100,80,0.35)');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, 1920, 1080);
+  ctx.strokeStyle = 'rgba(140,120,100,0.18)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(960, 0); ctx.lineTo(962, 1080); ctx.stroke();
+}
+function drawFx(frame) {
+  const cv = document.getElementById('fx'), ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, 1920, 1080);
+  const r = rng(1000 + Math.floor(frame / 2));
+  ctx.fillStyle = 'rgba(255,248,235,0.75)';
+  for (let i = 0; i < 520; i++) {
+    const x = r() * 1920, y = r() * 1080, s = 0.6 + r() * 1.8;
+    ctx.beginPath(); ctx.arc(x, y, s, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(29,35,64,0.25)';
+  for (let i = 0; i < 90; i++) { ctx.beginPath(); ctx.arc(r() * 1920, r() * 1080, 0.6 + r() * 1.3, 0, 7); ctx.fill(); }
+}
+
+// ============================================================
+// render
+// ============================================================
+const SHAKES = [[2.4, 14, 0.3], [5.4, 16, 0.3], [12.9, 8, 0.25], [25.2, 12, 0.3], [27.6, 14, 0.3], [35.2, 10, 0.35], [39.6, 26, 0.5], [44.3, 7, 0.25], [49.4, 6, 0.2]];
+const boilT = document.getElementById('boilT');
+function render(t) {
+  const frame = Math.round(t * FPS);
+  boilT.setAttribute('seed', 1 + (Math.floor(t * 10) % 40));
+  for (const s of scenes) {
+    const on = t >= s.t0 && t < s.t1;
+    show(s.g, on);
+    if (on) s.update(t);
+  }
+  let dx = 0, dy = 0;
+  for (const [t0, a, d] of SHAKES) {
+    if (t >= t0 && t < t0 + d) { const k = 1 - (t - t0) / d; dx += a * k * k * Math.sin(t * 91 + t0); dy += a * k * k * Math.cos(t * 77 + t0 * 3); }
+  }
+  const inGroove = (t >= 7.8 && t < 15.6) || (t >= 21.6 && t < 28.8);
+  const pulse = inGroove ? 1 + 0.006 * Math.exp(-((t % 0.6) / 0.07)) : 1;
+  let zoom = pulse;
+  if (t >= 8.0 && t < 15.6) zoom *= 1 + 0.06 * seg(t, 8.0, 15.6);
+  if (t >= 21.6 && t < 28.8) zoom *= 1 + 0.05 * seg(t, 21.6, 28.8);
+  if (t >= 37.2 && t < 39.6) zoom *= 1 + 0.05 * seg(t, 37.2, 39.6);
+  cam.setAttribute('transform', `translate(${(dx + 960 * (1 - zoom)).toFixed(2)} ${(dy + 540 * (1 - zoom)).toFixed(2)}) scale(${zoom.toFixed(4)})`);
+  let fl = 0;
+  if (t >= 2.4 && t < 2.55) fl = Math.max(fl, 0.35 * (1 - (t - 2.4) / 0.15));
+  if (t >= 4.2 && t < 4.5) fl = Math.max(fl, 0.95 * Math.pow(1 - (t - 4.2) / 0.3, 2));
+  if (t >= 39.6 && t < 39.72) fl = Math.max(fl, 0.5 * (1 - (t - 39.6) / 0.12));
+  op(flash, fl);
+  op(fade, seg(t, 53.9, 54.4));
+  hudUpdate(t);
+  wipeUpdate(t);
+  drawFx(frame);
+}
+
+async function init() {
+  const all = document.documentElement.innerHTML;
+  const fams = ['900 50px "Noto Serif SC"', '400 50px "ZCOOL KuaiLe"', '400 50px "Bagel Fat One"', '800 50px "JetBrains Mono"', '500 50px "JetBrains Mono"', '900 50px "Noto Sans SC"', '500 50px "Noto Sans SC"'];
+  const sample = all.replace(/[\x00-\x2f]/g, '') + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:：。，！？～·—';
+  await Promise.all(fams.map(f => document.fonts.load(f, sample)));
+  await document.fonts.ready;
+  buildPaper();
+  buildAll();
+  const all2 = document.getElementById('stage').textContent;
+  await Promise.all(fams.map(f => document.fonts.load(f, all2)));
+  await document.fonts.ready;
+  const q = new URLSearchParams(location.search);
+  window.render(parseFloat(q.get('t') || '0'));
+  window.READY = true;
+}
+// picture timeline re-authored on the 0.6 s grid; the film runs at the BGM's
+// original 108 BPM: video time × 1.08 = authored time (all beats keep their index)
+const TK = 1.08;
+const RENDER_TL = render;   // capture the original before overwriting window.render
+window.render = (t) => RENDER_TL(t * TK);
+window.DUR = DUR / TK;
+window.TEXTS = (t) => { const u = t * TK; return TX.map((e, i) => ({ e, i })).filter(({ e }) => u >= e.t0 && u < e.t1).map(({ e, i }) => ({ id: 'tx' + i, text: e.text, x0: e.x0, y0: e.y0, x1: e.x1, y1: e.y1 })); };
+init();
+</script>
+</body>
+</html>

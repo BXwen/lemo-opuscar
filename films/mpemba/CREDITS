@@ -1,0 +1,20 @@
+CREDITS —《姆潘巴悬案》 third-party assets
+
+Fonts (Google Fonts, OFL licence, self-hosted subsets in fonts/):
+- Noto Serif SC 900 — headlines (SIL Open Font License 1.1)
+- Noto Sans SC 500/900 — captions, stamps (SIL OFL 1.1)
+- ZCOOL KuaiLe — interjection bubble (SIL OFL 1.1)
+- Bagel Fat One — display numerals, case numbers (SIL OFL 1.1)
+- JetBrains Mono 500/800 — HUD, data, file labels (SIL OFL 1.1)
+
+Audio: all music and sound effects are synthesized from code in music.py
+(numpy/scipy); no sampled or third-party audio is used.
+
+Picture: every frame is drawn by code in index.html (SVG + Canvas 2D);
+no stock footage, no generated imagery.
+
+Tools (not content): Playwright (Apache-2.0), ffmpeg (GPL/LGPL build), numpy/scipy (BSD).
+
+Music bed: user-provided BGM (bgm/bgm.mp3, 108 BPM), used at its original
+speed (window 38.27-87.16s); the picture timeline was authored to its beat
+grid. Rights and usage clearance for the BGM are the user's responsibility.
