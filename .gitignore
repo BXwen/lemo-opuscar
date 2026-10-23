@@ -137,9 +137,6 @@ styles/*/demo/**/*_try.py
 styles/*/demo/stills/*_v1*
 !styles/art-deco/demo/stills/kit_v2.jpg
 
-# WorkBuddy 本地助手记忆
-/.workbuddy-ai/
-
 # 影片中间产物（成片走 Releases）
 films/mpemba/out/
 films/mpemba/stills/
