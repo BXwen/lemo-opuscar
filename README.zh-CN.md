@@ -353,7 +353,7 @@ claude plugin uninstall lemo-opuscar@lemolab
 点海报到<a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/">感谢片页面</a>在线观看。
 
 <table><tr>
-<td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars5000"><img src="docs/thanks/thanks-5000.jpg" alt="5000 星 · 百家被（50 秒）"></a><br><sub>5000 星 · 百家被（50 秒）</sub></td>
+<td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars6000"><img src="docs/thanks/thanks-6000.jpg" alt="6000 星 · 百家被（50 秒）"></a><br><sub>6000 星 · 百家被（50 秒）</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars3000"><img src="docs/thanks/thanks-3000.jpg" alt="3000 星 · 全家福（48 秒）"></a><br><sub>3000 星 · 全家福（48 秒）</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars2000"><img src="docs/thanks/thanks-2000.jpg" alt="2000 星 · 刷新（50 秒）"></a><br><sub>2000 星 · 刷新（50 秒）</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars800"><img src="docs/thanks/thanks-800.jpg" alt="800 星 · 反打（39 秒）"></a><br><sub>800 星 · 反打（39 秒）</sub></td>

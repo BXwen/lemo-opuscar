@@ -272,13 +272,13 @@ open(os.path.join(out_dir, 'opuscar98', 'index.html'), 'w', encoding='utf-8').wr
     '{{DESC}}': html.escape(FILM_DESC), '{{HEAD_META}}': film_meta,
     '{{FEATURE_POSTER}}': '../' + FEATURE['poster'], '{{FEATURE_SRC}}': '../' + FEATURE['src'],
     '{{BOOK_TABS}}': book_tabs, '{{BOOK_KINDS}}': book_kinds, '{{BOOK_FILMS}}': book_films}))
-# Thank-you films (made at 300, 800, 2,000, 3,000 and 5,000 stars): their own page. Like OPUSCAR 98 the films are not in the repo;
+# Thank-you films (made at 300, 800, 2,000, 3,000 and 6,000 stars): their own page. Like OPUSCAR 98 the films are not in the repo;
 # the 720p cuts are on the "web" release as stars<n>.mp4 (copied into the site), 1080p on the "thanks" release, posters in img/thanks/.
 THANKS_REL = f'https://github.com/{REPO}/releases/download/thanks'
 THANKS = [  # (id, title, Chinese title, length, date, description, Chinese description)
-    ('stars5000', '5,000 stars · The Quilt', '5000 星 · 百家被', '0:50', '2026-10-22',
-     'One star, one patch: 5,000 stargazers sew a quilt for a library not yet a month old. Little Clawd falls asleep under it and dreams in the library\'s styles.',
-     '一颗星一块布，5000 位点星的人给还没满月的库缝了一床百家被。小 Clawd 盖着它睡着了，梦里是库里的各种画风。'),
+    ('stars6000', '6,000 stars · The Quilt', '6000 星 · 百家被', '0:50', '2026-10-24',
+     'One star, one patch: 6,000 stargazers sew a quilt for a library not yet a month old. Little Clawd falls asleep under it and dreams in the library\'s styles.',
+     '一颗星一块布，6000 位点星的人给还没满月的库缝了一床百家被。小 Clawd 盖着它睡着了，梦里是库里的各种画风。'),
     ('stars3000', '3,000 stars · Class Photo', '3000 星 · 全家福', '0:48', '2026-10-19',
      'Clawds in 25 of the library\'s styles squeeze into one class photo; it develops in the darkroom with every stargazer\'s name printed under it.',
      '库里 25 种画风的 Clawd 挤进一张全家福，在暗房里显影出来，下面印着每一位点星的人。'),
@@ -292,20 +292,22 @@ THANKS = [  # (id, title, Chinese title, length, date, description, Chinese desc
      'In one continuous shot Clawd lights 300 stars, each in a different style; pulled back, they spell 300.',
      'Clawd 一镜到底点亮 300 颗星，每颗一种画风；镜头拉远，它们拼成 300。')]
 THANKS_URL = SITE_URL + 'thanks/'
-THANKS_DESC = 'Lemo-Opuscar thank-you films at 300, 800, 2,000, 3,000 and 5,000 GitHub stars, each made entirely in code by Claude Opus 5.5, with no video model.'
+THANKS_ALIAS = {'stars6000': 'stars5000'}   # the 6,000-star cut replaced the 5,000-star one; old #stars5000 links land on it
+THANKS_DESC = 'Lemo-Opuscar thank-you films at 300, 800, 2,000, 3,000 and 6,000 GitHub stars, each made entirely in code by Claude Opus 5.5, with no video model.'
 
 def thanks_films():
     e = html.escape
     def one(f):
         fid, en, zh, dur, day, d_en, d_zh = f
         src = f'../films/{fid}.mp4' if site else f'../../.release/web/{fid}.mp4'
-        return (f'<section class="film" id="{fid}"><div class="frame"><video controls preload="metadata" playsinline poster="../img/thanks/{fid}.jpg" src="{src}"></video></div>\n'
+        alias = f'<span id="{THANKS_ALIAS[fid]}"></span>' if fid in THANKS_ALIAS else ''
+        return (f'<section class="film" id="{fid}">{alias}<div class="frame"><video controls preload="metadata" playsinline poster="../img/thanks/{fid}.jpg" src="{src}"></video></div>\n'
                 f' <div class="cap"><h2>{e(en)}</h2><span class="cn">{e(zh)}</span><span class="meta">{dur} · {day} · <a href="{THANKS_REL}/{fid}.mp4">1080p ↓</a></span></div>\n'
                 f' <p class="desc">{e(d_en)}</p><p class="desc-cn">{e(d_zh)}</p></section>')
     return one(THANKS[0]) + '\n<div class="pair">\n' + '\n'.join(one(f) for f in THANKS[1:]) + '\n</div>'
 
 def iso(t): m, s_ = t.split(':'); return f'PT{int(m)}M{int(s_)}S'
-thanks_meta = head_meta(THANKS_URL, 'Thank you for every star · Lemo-Opuscar', THANKS_DESC, SITE_URL + 'img/thanks/stars5000.jpg',
+thanks_meta = head_meta(THANKS_URL, 'Thank you for every star · Lemo-Opuscar', THANKS_DESC, SITE_URL + 'img/thanks/stars6000.jpg',
                         [{'@type': 'CollectionPage', '@id': THANKS_URL, 'url': THANKS_URL, 'name': 'Lemo-Opuscar thank-you films', 'description': THANKS_DESC,
                           'about': {'@id': REPO_URL}, 'author': {'@id': AUTHOR['@id']},
                           'hasPart': [{'@type': 'VideoObject', 'name': f[1], 'description': f[5], 'thumbnailUrl': SITE_URL + f'img/thanks/{f[0]}.jpg',
@@ -330,7 +332,7 @@ def llms_txt():
            f'- [Agent instructions]({BLOB_URL}/AGENTS.md): how an agent directs a film in one of the styles',
            f'- [Gallery]({SITE_URL}): every style with its demo film',
            f'- [OPUSCAR 98]({FILM_URL}): 98 Years of Best Picture ({FEATURE["dur"]}), the feature film made with these tools',
-           f'- [Thank-you films]({THANKS_URL}): films made at 300, 800, 2,000, 3,000 and 5,000 stars',
+           f'- [Thank-you films]({THANKS_URL}): films made at 300, 800, 2,000, 3,000 and 6,000 stars',
            f'- [OPUSCAR 98, all 98 styles]({FILM_URL}#styles): per film the style, a reusable style prompt, and the shots and direction '
            f'(as JSON: {FILM_URL}styles.json)', '']
     for cn, en in cats:

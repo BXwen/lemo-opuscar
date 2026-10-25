@@ -353,7 +353,7 @@ A thank-you film at each milestone, made in code like everything here.<br>
 Click a poster to watch on the <a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/">thank-you page</a>.
 
 <table><tr>
-<td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars5000"><img src="docs/thanks/thanks-5000.jpg" alt="5,000 stars · The Quilt (50 s)"></a><br><sub>5,000 stars · The Quilt (50 s)</sub></td>
+<td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars6000"><img src="docs/thanks/thanks-6000.jpg" alt="6,000 stars · The Quilt (50 s)"></a><br><sub>6,000 stars · The Quilt (50 s)</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars3000"><img src="docs/thanks/thanks-3000.jpg" alt="3,000 stars · Class Photo (48 s)"></a><br><sub>3,000 stars · Class Photo (48 s)</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars2000"><img src="docs/thanks/thanks-2000.jpg" alt="2000 stars · Refresh (50 s)"></a><br><sub>2,000 stars · Refresh (50 s)</sub></td>
 <td width="20%" valign="top"><a href="https://lemomo-ai.github.io/lemo-opuscar/thanks/#stars800"><img src="docs/thanks/thanks-800.jpg" alt="800 stars · Reverse Shot (39 s)"></a><br><sub>800 stars · Reverse Shot (39 s)</sub></td>
