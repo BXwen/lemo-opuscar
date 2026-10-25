@@ -12,48 +12,111 @@
 </head>
 <body>
 <svg id="cover" width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="halftoneDots" width="28" height="28" patternUnits="userSpaceOnUse" patternTransform="rotate(20)">
+      <circle cx="14" cy="14" r="2.8" fill="#1D2340" opacity="0.08"/>
+    </pattern>
+    <filter id="stampRough">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <!-- Paper background & halftone overlay -->
+  <rect width="1080" height="1920" fill="#F4ECDD"/>
+  <rect width="1080" height="1920" fill="url(#halftoneDots)" class="mul"/>
+
+  <!-- Outer dossier border -->
+  <rect x="40" y="50" width="1000" height="1820" rx="20" fill="none" stroke="#1D2340" stroke-width="4" opacity="0.85"/>
+  <rect x="52" y="62" width="976" height="1796" rx="14" fill="none" stroke="#1D2340" stroke-width="2" stroke-dasharray="14 10" opacity="0.5"/>
+
   <g id="g"></g>
 </svg>
 <script>
 const NS = 'http://www.w3.org/2000/svg';
-const C = { paper:'#F4ECDD', navy:'#1D2340', pink:'#FF5A87', yellow:'#FFC628', red:'#E8384F' };
-const F = { serif:"'Noto Serif SC'" };
+const C = { paper:'#F4ECDD', navy:'#1D2340', blue:'#2E55D6', pink:'#FF5A87', yellow:'#FFC628', red:'#E8384F', cream:'#FFF4E2' };
+const F = { serif:"'Noto Serif SC', serif", mono:"'JetBrains Mono', monospace", sans:"'Noto Sans SC', sans-serif" };
 const g = document.getElementById('g');
 const el = (t, a, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
 const txt = (p, s, a) => { const e = el('text', a, p); e.textContent = s; return e; };
+
 function measure(str, size, family, weight = 900) {
   const c = document.createElement('canvas').getContext('2d');
   c.font = `${weight} ${size}px ${family}`; return c.measureText(str).width;
 }
-// 两行大字：①你信不信？ ②热水比冷水先结冰（关键词红色），垂直分隔确保不重叠
+
+// 1. Top Case Header Tag
+{
+  const topBox = el('g', { transform: 'translate(540, 360)' }, g);
+  el('rect', { x: -250, y: -40, width: 500, height: 80, rx: 8, fill: C.navy }, topBox);
+  txt(topBox, 'CASE No. 1963-MPE', { x: 0, y: 14, 'font-size': 38, 'font-family': F.mono, 'font-weight': 800, fill: C.yellow, 'text-anchor': 'middle', 'letter-spacing': 4 });
+
+  txt(g, '坦桑尼亚中学生与物理学界的 60 年悬案', { x: 540, y: 485, 'font-size': 32, 'font-family': F.sans, 'font-weight': 700, fill: C.navy, 'text-anchor': 'middle', opacity: 0.85 });
+}
+
+// 2. Main Hook Big Headlines
 const A = '你信不信？';
 const B1 = '热水比冷水', B2 = '先结冰';
-const SZ1 = 170, SZ2 = 116;
-const Y1 = 800, Y2 = 1120;
+const SZ1 = 180, SZ2 = 106;
+const Y1 = 730, Y2 = 940;
 const wA = measure(A, SZ1, F.serif, 900);
 const wB1 = measure(B1, SZ2, F.serif, 900), wB2 = measure(B2, SZ2, F.serif, 900);
-// 行1（居中，粉色套印阴影）
+
+// Line 1: 你信不信？
 {
   let x = 540 - wA / 2;
   for (const ch of A) {
     const w = measure(ch, SZ1, F.serif, 900);
-    txt(g, ch, { x: x + w / 2 + 9, y: Y1 + 9, 'font-size': SZ1, 'font-family': F.serif, 'font-weight': 900, fill: C.pink, 'text-anchor': 'middle', class: 'mul' });
+    txt(g, ch, { x: x + w / 2 + 10, y: Y1 + 10, 'font-size': SZ1, 'font-family': F.serif, 'font-weight': 900, fill: C.pink, 'text-anchor': 'middle', class: 'mul' });
     txt(g, ch, { x: x + w / 2, y: Y1, 'font-size': SZ1, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
     x += w;
   }
 }
-// 行2（居中，前五字墨色 + 关键词红色）
+
+// Line 2: 热水比冷水 先结冰
+// Total width is safely ~850px, leaving >110px safe margin on left and right, ensuring "热" is never clipped!
 {
-  const x0 = 540 - (wB1 + wB2) / 2;
+  const totalB = wB1 + wB2 + 20; // 20px gap between parts
+  const x0 = 540 - totalB / 2;
   let x = x0;
-  for (const [str, col] of [[B1, C.navy], [B2, C.red]]) {
-    for (const ch of str) {
-      const w = measure(ch, SZ2, F.serif, 900);
-      txt(g, ch, { x: x + w / 2 + 7, y: Y2 + 7, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.yellow, 'text-anchor': 'middle', class: 'mul' });
-      txt(g, ch, { x: x + w / 2, y: Y2, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: col, 'text-anchor': 'middle' });
-      x += w;
-    }
+
+  for (const ch of B1) {
+    const w = measure(ch, SZ2, F.serif, 900);
+    txt(g, ch, { x: x + w / 2 + 8, y: Y2 + 8, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.yellow, 'text-anchor': 'middle', class: 'mul' });
+    txt(g, ch, { x: x + w / 2, y: Y2, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.navy, 'text-anchor': 'middle' });
+    x += w;
   }
+
+  x += 20; // gap
+
+  for (const ch of B2) {
+    const w = measure(ch, SZ2, F.serif, 900);
+    txt(g, ch, { x: x + w / 2 + 8, y: Y2 + 8, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.pink, 'text-anchor': 'middle', class: 'mul' });
+    txt(g, ch, { x: x + w / 2, y: Y2, 'font-size': SZ2, 'font-family': F.serif, 'font-weight': 900, fill: C.red, 'text-anchor': 'middle' });
+    x += w;
+  }
+}
+
+// 3. Middle / Lower Case Folder Card Graphic (Balanced & Spacious)
+{
+  const cardG = el('g', { transform: 'translate(540, 1340)' }, g);
+
+  // Folder card shadow
+  el('rect', { x: -440 + 12, y: -180 + 12, width: 880, height: 360, rx: 18, fill: 'rgba(29,35,64,0.18)' }, cardG);
+  // Folder card base
+  el('rect', { x: -440, y: -180, width: 880, height: 360, rx: 18, fill: C.blue, stroke: C.navy, 'stroke-width': 4 }, cardG);
+  el('rect', { x: -415, y: -155, width: 830, height: 310, rx: 12, fill: 'none', stroke: C.cream, 'stroke-width': 3, 'stroke-dasharray': '14 8', opacity: 0.75 }, cardG);
+
+  // Card text: 姆潘巴悬案
+  txt(cardG, '物证卷宗 · CONFIDENTIAL', { x: -385, y: -105, 'font-size': 26, 'font-family': F.mono, 'font-weight': 700, fill: C.yellow, 'letter-spacing': 3 });
+  txt(cardG, '姆潘巴悬案', { x: 0, y: 35, 'font-size': 120, 'font-family': F.serif, 'font-weight': 900, fill: C.cream, 'text-anchor': 'middle', 'letter-spacing': 6 });
+  txt(cardG, 'THE MPEMBA EFFECT · 六十年未解之谜', { x: 0, y: 105, 'font-size': 30, 'font-family': F.mono, 'font-weight': 600, fill: C.yellow, 'text-anchor': 'middle', opacity: 0.9 });
+
+  // Slanted RED STAMP: 未结案
+  const stampG = el('g', { transform: 'translate(285, -45) rotate(-14)', filter: 'url(#stampRough)' }, cardG);
+  el('rect', { x: -95, y: -48, width: 190, height: 96, rx: 8, fill: 'none', stroke: C.red, 'stroke-width': 7 }, stampG);
+  el('rect', { x: -87, y: -40, width: 174, height: 80, rx: 4, fill: 'none', stroke: C.red, 'stroke-width': 2 }, stampG);
+  txt(stampG, '未结案', { x: 0, y: 17, 'font-size': 48, 'font-family': F.sans, 'font-weight': 900, fill: C.red, 'text-anchor': 'middle', 'letter-spacing': 4 });
 }
 </script>
 </body>
